@@ -4,16 +4,11 @@ import math
 
 from datetime import datetime, timedelta
 
+from Credentials import COOKIES, HEADERS
+
 BASE_URL = "https://www.hut-reservation.org/api/v1"
-DATE_TO_CHECK = ["2025-07-09","2025-07-10","2025-07-11","2025-07-12"] # <-- Hier dein Wunschdatum eintragen
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "X-XSRF-TOKEN": ""
-}
-COOKIES = {
-    "SESSION": "", # <-- Hier dein Session-Cookie eintragen nach dem Login
-    "XSRF-TOKEN": "" # <-- Hier dein XSRF-Cookie eintragen nach dem Login
-}
+DATE_TO_CHECK = ["2025-07-09","2025-07-08"] # <-- Hier dein Wunschdatum eintragen
+
 NUMBER_OF_PEOPLE = 5  # Anzahl der Personen für die Reservierung, 0 für gibt an, dass es egal ist
 
 
@@ -112,6 +107,7 @@ def find_groups(hut_infos, available_per_day):
     # Wenn available_per_day für einen Tag keine Hütten hat, ist keine Gruppe möglich
     for date, hut_ids in available_per_day.items():
         if not hut_ids:
+            print(f"Keine Hütten verfügbar am {date}. Keine Gruppen möglich.")
             return all_groups  # Keine Gruppen möglich, wenn an einem Tag keine Hütten verfügbar sind
     
     # Erstelle Baumstruktur für benachbarte Hütten mit Koordinaten
@@ -127,6 +123,21 @@ def find_groups(hut_infos, available_per_day):
     # Finde den Tag mit den wenigsten verfügbaren Hütten
     min_day = min(available_per_day, key=lambda d: len(available_per_day[d]))
     start_huts = set(available_per_day[min_day])
+
+    print(f"Start Hütten am {min_day}: {start_huts}")
+    if not start_huts:
+        print("Keine Start-Hütten gefunden, die an den angegebenen Tagen verfügbar sind.")
+        return all_groups
+    
+    #Prüfe welche der Start-Hütten auch an den anderen Tagen verfügbar sind, um eine Wanderung nur mit Tagesrouten zu ermöglichen
+    stationary_huts = start_huts
+    for date in available_per_day:
+        # Filtere alle Hütten aus start_huts, die an diesem Tag verfügbar sind
+        available_today = set(available_per_day[date])
+        # Behalte nur die Hütten, die an diesem Tag verfügbar sind
+        stationary_huts = stationary_huts.intersection(available_today)
+    if not stationary_huts:
+        print("Keine Hütten gefunden, die an allen angegebenen Tagen verfügbar sind.")    
 
     steps = len(DATE_TO_CHECK) - 1 # Anzahl der Schritte, die wir gehen können, basierend auf den verfügbaren Tagen
     relevant_huts = reachable_huts(hut_tree, start_huts, steps)
@@ -144,6 +155,7 @@ def find_groups(hut_infos, available_per_day):
     # Filter available_per_day
     for day in available_per_day:
         available_per_day[day] = [hid for hid in available_per_day[day] if hid in relevant_huts]
+    print(f"Verfügbare Hütten pro Tag nach Filterung: {available_per_day}")
 
     # Suche Gruppen von Hütten, die an allen Tagen verfügbar sind und benachbart sind
     def search_group(current_group, remaining_days):
@@ -168,9 +180,11 @@ def find_groups(hut_infos, available_per_day):
             if is_neighbour or not current_group:  # Wenn es noch keine Hütten in der Gruppe gibt, füge die Hütte hinzu
                 new_group = current_group + [hut_id]
                 search_group(new_group, remaining_days[1:])
+    
 
     # Starte die Suche mit einer leeren Gruppe und allen verfügbaren Tagen
     search_group([], list(available_per_day.keys()))
+
     return all_groups
 
 def find_neighbours(hut_id, lat, lon, hut_infos, max_distance=15):
@@ -204,6 +218,7 @@ def main():
         DATE_TO_CHECK = [DATE_TO_CHECK]
     DATE_TO_CHECK = sorted(DATE_TO_CHECK, key=lambda x: datetime.strptime(x, "%Y-%m-%d"))
 
+    print(f"List alle Hütten im System auf...")
     huts = get_huts() # Struktur: [{'hutName': 'Hütte A', 'hutId': 603, 'hutCountry': 'CH'}, , {"hutId": 456, "hutName": "Hütte B", "hutCountry": AT}, ...]
     # print(f"Gefundene Hütten: {huts}")
     hut_infos = {}        
@@ -213,6 +228,7 @@ def main():
     for date in DATE_TO_CHECK:
         available_per_day[date] = []
     
+    print(f"Iteriere über alle {len(huts)} Hütten und prüfe Verfügbarkeit an den Daten {DATE_TO_CHECK} für {NUMBER_OF_PEOPLE} Personen...")
     for hut in huts:
         hut_id = hut["hutId"]
         name = hut.get("hutName", "")
@@ -251,6 +267,8 @@ def main():
         except Exception:
             continue
 
+    
+    print(f"Versuche aus den {len(hut_infos)} verfügbaren Hütten Gruppen zu bilden...")
     all_groups = find_groups(hut_infos, available_per_day)
     print(f"Gefundene Gruppen: {all_groups}")
     
