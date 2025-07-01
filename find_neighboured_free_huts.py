@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from HEADERS_COOKIES import COOKIES, HEADERS
 
 BASE_URL = "https://www.hut-reservation.org/api/v1"
-DATE_TO_CHECK = ["2025-07-09","2025-07-10", "2025-07-11","2025-07-12"] # <-- Hier dein Wunschdatum eintragen
+DATE_TO_CHECK = ["2025-07-09","2025-07-12"] # <-- Hier deine Wunschdaten eintragen
 
 NUMBER_OF_PEOPLE = 5  # Anzahl der Personen für die Reservierung, 0 für gibt an, dass es egal ist
 
@@ -19,6 +19,11 @@ BORDERS = {
     "south": 46.851   # Breitengrad Südgrenze
 }
 
+COUNTRY = "AT"  # Land, für das die Hütten aufgelistet werden sollen, z.B. "AT" für Österreich, "CH" für Schweiz, "DE" für Deutschland
+
+ALLOW_DOUBLE_HUT = False  # Wenn True, kann eine Hütte mehrmals in einer Gruppe sein, sonst nur einmal
+ALLOW_STATIONARY_HUTS = False  # Wenn True, werden auch Gruppen gebildet mit nur einer Hütte, die an allen Tagen verfügbar ist
+MAX_DISTANCE = 10  # Maximale Distanz in km, um benachbarte Hütten zu finden (Luftlinie)
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371  # Erdradius in km
@@ -132,7 +137,7 @@ def find_groups(hut_infos, available_per_day, allow_double_hut=False, allow_stat
         hut_tree[hut_id] = {
             "lat": lat,
             "lon": lon,
-            "neighbours": find_neighbours(hut_id, lat, lon, hut_infos)
+            "neighbours": find_neighbours(hut_id, lat, lon, hut_infos, max_distance=MAX_DISTANCE)  # max_distance in km, hier 10 km
         }
     # Finde den Tag mit den wenigsten verfügbaren Hütten
     min_day = min(available_per_day, key=lambda d: len(available_per_day[d]))
@@ -228,18 +233,32 @@ def reachable_huts(hut_tree, start_huts, steps):
         frontier = next_frontier
     return reachable
 
-def main():
+def sort_and_fill_Datelist():
     #Sortier DATE_TO_CHECK 
     global DATE_TO_CHECK
     if isinstance(DATE_TO_CHECK, str):
         DATE_TO_CHECK = [DATE_TO_CHECK]
     DATE_TO_CHECK = sorted(DATE_TO_CHECK, key=lambda x: datetime.strptime(x, "%Y-%m-%d"))
 
-    print(f"List alle Hütten im System auf...")
+    # Stelle sicher, dass DATE_TO_CHECK kontinuierlich ist und ergänze fehlende Tage
+    start_date = datetime.strptime(DATE_TO_CHECK[0], "%Y-%m-%d")
+    end_date = datetime.strptime(DATE_TO_CHECK[-1], "%Y-%m-%d")
+    all_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        all_dates.append(current_date.strftime("%Y-%m-%d"))
+        current_date += timedelta(days=1)
+    DATE_TO_CHECK = all_dates
+    return DATE_TO_CHECK
+
+def main():
+    DATE_TO_CHECK = sort_and_fill_Datelist()  # Sortiere und fülle die Datums-Liste auf
+    print(f"Liste alle Hütten im System auf...")
     huts = get_huts() # Struktur: [{'hutName': 'Hütte A', 'hutId': 603, 'hutCountry': 'CH'}, , {"hutId": 456, "hutName": "Hütte B", "hutCountry": AT}, ...]
     
-    #Filter huts for hutCountry == "AT"
-    huts = [hut for hut in huts if hut.get("hutCountry") == "AT"]  # Nur Hütten in Österreich
+    #Filter huts for hutCountry = COUNTRY
+    if COUNTRY:
+        huts = [hut for hut in huts if hut.get("hutCountry") == COUNTRY]
 
     #FOR DEBUGGING: Kürze huts auf die ersten 10 Einträge
     #huts = huts[:10]  # Nur die ersten 10 Hütten für Debugging
@@ -265,8 +284,10 @@ def main():
         else:
             coords = {"latitude": None, "longitude": None}
 
-        if coords["longitude"] < BORDERS["west"] or coords["longitude"] > BORDERS["east"] or coords["latitude"] < BORDERS["south"] or coords["latitude"] > BORDERS["north"]:
-            continue  # Nur Hütten innerhalb der Grenzen BORDERS berücksichtigen
+        # Wenn BORDERS gesetzt ist, prüfe, ob die Koordinaten innerhalb der Grenzen liegen
+        if BORDERS:
+            if coords["longitude"] < BORDERS["west"] or coords["longitude"] > BORDERS["east"] or coords["latitude"] < BORDERS["south"] or coords["latitude"] > BORDERS["north"]:
+                continue  # Nur Hütten innerhalb der Grenzen BORDERS berücksichtigen
         try:
             free_beds = check_availability(hut_id, DATE_TO_CHECK[0], DATE_TO_CHECK[-1])
             for day in free_beds:
@@ -302,17 +323,29 @@ def main():
             writer.writerow([hut_id, info["name"], info["lat"], info["lon"]])
 
     print(f"Versuche aus den {len(hut_infos)} verfügbaren Hütten Gruppen zu bilden...")
-    all_groups = find_groups(hut_infos, available_per_day, False, False)
+    all_groups = find_groups(hut_infos, available_per_day, allow_double_hut=ALLOW_DOUBLE_HUT, allow_stationary_huts=ALLOW_STATIONARY_HUTS)
     print(f"Gefundene Gruppen: {all_groups}")
     
     with open("huettengruppen_at.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        header = [f"Tag{i+1}_id" for i in range(len(DATE_TO_CHECK)-1)] + [f"Tag{i+1}_name" for i in range(len(DATE_TO_CHECK)-1)] + [f"Coordinates_Tag{i+1}" for i in range(len(DATE_TO_CHECK)-1)]
+        # Interleave lat/lon headers
+        coords_headers = []
+        for i in range(len(DATE_TO_CHECK)-1):
+            coords_headers.append(f"Coords_lat_Tag{i+1}")
+            coords_headers.append(f"Coords_lon_Tag{i+1}")
+        header = (
+            [f"Tag{i+1}_id" for i in range(len(DATE_TO_CHECK)-1)] +
+            [f"Tag{i+1}_name" for i in range(len(DATE_TO_CHECK)-1)] +
+            coords_headers
+        )
         writer.writerow(header)
         for group in all_groups:
             ids = group
             names = [hut_infos[hid]["name"] for hid in group]
-            coords = [f"{hut_infos[hid]['lat']}, {hut_infos[hid]['lon']}" for hid in group]
+            coords = []
+            for hid in group:
+                coords.append(hut_infos[hid]['lat'])
+                coords.append(hut_infos[hid]['lon'])
             writer.writerow(ids + names + coords)
 
     print(f"{len(all_groups)} Hütten mit freien Betten am {DATE_TO_CHECK} gefunden.")
