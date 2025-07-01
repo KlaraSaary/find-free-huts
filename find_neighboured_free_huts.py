@@ -1,3 +1,4 @@
+import time
 import requests
 import csv
 import math
@@ -7,9 +8,16 @@ from datetime import datetime, timedelta
 from HEADERS_COOKIES import COOKIES, HEADERS
 
 BASE_URL = "https://www.hut-reservation.org/api/v1"
-DATE_TO_CHECK = ["2025-07-09","2025-07-08"] # <-- Hier dein Wunschdatum eintragen
+DATE_TO_CHECK = ["2025-07-09","2025-07-10", "2025-07-11","2025-07-12"] # <-- Hier dein Wunschdatum eintragen
 
 NUMBER_OF_PEOPLE = 5  # Anzahl der Personen für die Reservierung, 0 für gibt an, dass es egal ist
+
+BORDERS = {
+    "west": 9.635,  # Längengrad Westgrenze
+    "east": 12.401,  # Längengrad Ostgrenze
+    "north": 47.769,  # Breitengrad Nordgrenze
+    "south": 46.851   # Breitengrad Südgrenze
+}
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -26,22 +34,27 @@ def get_huts():
     resp.raise_for_status()
     return resp.json()
 
-def get_hut_details(hut_id, return_category="all"):
-    url = f"{BASE_URL}/reservation/hutInfo/{hut_id}"
-    resp = requests.get(url, headers=HEADERS, cookies=COOKIES)
+def get_hut_details(hut_id, return_category="all", retries=3, delay=1):
     # Beispiel Response:
     # {"hutWebsite":"https://www.sac-pilatus.ch/aarbiwak.html","hutId":603,"tenantCode":"SAC","hutUnlocked":true,"maxNumberOfNights":20,"hutName":"Aarbiwak SAC","hutWarden":"Markus Brefin","phone":"+41 33 744 36 11","coordinates":"46.5555,  8.1522","altitude":"2731 m","totalBedsInfo":"17","tenantCountry":"CH","picture":{"fileType":"HUT_PICTURE","blobPath":"https://www.hut-reservation.org/data/files/hut_picture_603.jpeg","fileName":"picture_603.jpeg","fileData":null},"hutLanguages":["DE_CH","EN"],"hutBedCategories":[{"index":1,"categoryID":1771,"rooms":[],"isVisible":true,"totalSleepingPlaces":14,"reservationMode":"ROOM","hutBedCategoryLanguageData":[{"language":"DE_CH","label":"Massenlager","shortLabel":"ML","description":"Bitte immer einen Hüttenschlafsack mitnehmen"},{"language":"EN","label":"Dormitory","shortLabel":"Dorm","description":"Please always take a hut sleeping bag with you"}],"isLinkedToReservation":false,"tenantBedCategoryId":1},{"index":11,"categoryID":1772,"rooms":[],"isVisible":true,"totalSleepingPlaces":14,"reservationMode":"UNSERVICED","hutBedCategoryLanguageData":[{"language":"DE_CH","label":"Schutzraum/Winterraum","shortLabel":"SrWr","description":"Bitte immer einen Hüttenschlafsack mitnehmen"},{"language":"EN","label":"Emergency Room","shortLabel":"Emer","description":"Please always take a hut sleeping bag with you"}],"isLinkedToReservation":false,"tenantBedCategoryId":43}],"providerName":"NO_EPAYMENT","hutGeneralDescriptions":[{"description":"Das Aarbiwak ist eine unbewartete Selbsversorgerhütte. Stornierungen einer Reservation können bis um 18:00 Uhr des Vorabends getätigt werden. Falls nicht rechtzeitig storniert wird, behalten wir uns vor, eine No-Show-Gebühr von CHF 25.- zu verrechnen.","language":"DE_CH"},{"description":"L'Aarbiwak est une cabane indépendante sans surveillance. Les annulations de réservation peuvent être faites jusqu'à 18h la veille. Si vous n'annulez pas à temps, nous nous réservons le droit de facturer des frais de non-présentation de CHF 25.","language":"FR"},{"description":"L'Aarbiwak è una capanna self-catering incustodita. Le cancellazioni di una prenotazione possono essere effettuate fino alle 18:00 della sera precedente. Se non si annulla in tempo, ci riserviamo il diritto di addebitare una penale per mancata presentazione di CHF 25.","language":"IT"},{"description":"The Aarbiwak is an unattended self-catering hut. Cancellations of a reservation can be made up to 6 p.m. the evening before. If you do not cancel in time, we reserve the right to charge a no-show fee of CHF 25.","language":"EN"}],"supportLink":"","waitingListEnabled":false}
-    resp.raise_for_status()
-    data = resp.json()
-    # print(f"Details für Hütte {hut_id} abgerufen: {data}")
-    if return_category == "all":
-        return data
-    # If return_category is an array, return an array of the specified category
-    # else just return the specified category
-    elif isinstance(return_category, list):
-        return {cat: data.get(cat, {}) for cat in return_category}
-    else:        
-        return data.get(return_category, {})
+    url = f"{BASE_URL}/reservation/hutInfo/{hut_id}"
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, headers=HEADERS, cookies=COOKIES, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if return_category == "all":
+                return data
+            elif isinstance(return_category, list):
+                return {cat: data.get(cat, {}) for cat in return_category}
+            else:        
+                return data.get(return_category, {})
+        except requests.exceptions.RequestException as e:
+            print(f"Fehler beim Abrufen von Hütte {hut_id} (Versuch {attempt+1}/{retries}): {e}")
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                return None
     
 def get_hut_hutBedCategories(hut_id):
     hutBedCategories = get_hut_details(hut_id, return_category="hutBedCategories")
@@ -97,8 +110,9 @@ def check_availability(hut_id, arrival, departure=None):
 
     return free_beds
 
-def find_groups(hut_infos, available_per_day):
-    allow_double_hut = True  # Wenn True, kann eine Hütte mehrmals in einer Gruppe sein, sonst nur einmal
+def find_groups(hut_infos, available_per_day, allow_double_hut=False, allow_stationary_huts=False):
+    # allow_double_hut: Wenn True, kann eine Hütte mehrmals in einer Gruppe sein, sonst nur einmal
+    #allow_stationary_huts: Wenn True, werden nur Hütten berücksichtigt, die an allen Tagen verfügbar sind
 
     # hut_infos ist ein Dictionary mit Hut-IDs als Schlüsseln und Informationen über die Hütten (Name, Koordinaten) als Werten für Hütten, die mindestens an einem der angegebenen Tage verfügbar sind
     # available_per_day ist ein Dictionary mit Datum als Schlüssel und einer Liste von Hut-IDs, die an diesem Tag verfügbar sind
@@ -130,14 +144,17 @@ def find_groups(hut_infos, available_per_day):
         return all_groups
     
     #Prüfe welche der Start-Hütten auch an den anderen Tagen verfügbar sind, um eine Wanderung nur mit Tagesrouten zu ermöglichen
-    stationary_huts = start_huts.copy()  # Kopie der Start-Hütten, um sie zu filtern
-    for date in available_per_day:
-        # Filtere alle Hütten aus start_huts, die an diesem Tag verfügbar sind
-        available_today = set(available_per_day[date])
-        # Behalte nur die Hütten, die an diesem Tag verfügbar sind
-        stationary_huts = stationary_huts.intersection(available_today)
-    if not stationary_huts:
-        print("Keine Hütten gefunden, die an allen angegebenen Tagen verfügbar sind.")    
+    if allow_stationary_huts:
+        stationary_huts = start_huts.copy()  # Kopie der Start-Hütten, um sie zu filtern
+        for date in available_per_day:
+            # Filtere alle Hütten aus start_huts, die an diesem Tag verfügbar sind
+            available_today = set(available_per_day[date])
+            # Behalte nur die Hütten, die an diesem Tag verfügbar sind
+            stationary_huts = stationary_huts.intersection(available_today)
+        if not stationary_huts:
+            print("Keine Hütten gefunden, die an allen angegebenen Tagen verfügbar sind.")
+        else:
+            all_groups = [[hid] for hid in stationary_huts]  # Jede Hütte als eigene Gruppe
 
     steps = len(DATE_TO_CHECK) - 1 # Anzahl der Schritte, die wir gehen können, basierend auf den verfügbaren Tagen
     relevant_huts = reachable_huts(hut_tree, start_huts, steps)
@@ -187,7 +204,7 @@ def find_groups(hut_infos, available_per_day):
 
     return all_groups
 
-def find_neighbours(hut_id, lat, lon, hut_infos, max_distance=15):
+def find_neighbours(hut_id, lat, lon, hut_infos, max_distance=10):
     neighbours = []
     for other_id, info in hut_infos.items():
         if other_id == hut_id:
@@ -220,12 +237,19 @@ def main():
 
     print(f"List alle Hütten im System auf...")
     huts = get_huts() # Struktur: [{'hutName': 'Hütte A', 'hutId': 603, 'hutCountry': 'CH'}, , {"hutId": 456, "hutName": "Hütte B", "hutCountry": AT}, ...]
+    
+    #Filter huts for hutCountry == "AT"
+    huts = [hut for hut in huts if hut.get("hutCountry") == "AT"]  # Nur Hütten in Österreich
+
+    #FOR DEBUGGING: Kürze huts auf die ersten 10 Einträge
+    #huts = huts[:10]  # Nur die ersten 10 Hütten für Debugging
+
     # print(f"Gefundene Hütten: {huts}")
     hut_infos = {}        
     available_huts = []
 
     available_per_day = {}
-    for date in DATE_TO_CHECK:
+    for date in DATE_TO_CHECK[0:-1]:  # Letztes Datum nicht einbeziehen, da es kein Folgedatum gibt
         available_per_day[date] = []
     
     print(f"Iteriere über alle {len(huts)} Hütten und prüfe Verfügbarkeit an den Daten {DATE_TO_CHECK} für {NUMBER_OF_PEOPLE} Personen...")
@@ -233,6 +257,16 @@ def main():
         available_at_all = False
         hut_id = hut["hutId"]
         name = hut.get("hutName", "")
+        coords_str = get_hut_details(hut["hutId"], return_category="coordinates") # Struktur: "46.5555, 8.1522" oder auch '46.953985/12.781181'
+        if coords_str:
+                coords_str = coords_str.replace("/", ",")
+                lat_str, lon_str = coords_str.split(",")
+                coords = {"latitude": float(lat_str.strip()), "longitude": float(lon_str.strip())}
+        else:
+            coords = {"latitude": None, "longitude": None}
+
+        if coords["longitude"] < BORDERS["west"] or coords["longitude"] > BORDERS["east"] or coords["latitude"] < BORDERS["south"] or coords["latitude"] > BORDERS["north"]:
+            continue  # Nur Hütten innerhalb der Grenzen BORDERS berücksichtigen
         try:
             free_beds = check_availability(hut_id, DATE_TO_CHECK[0], DATE_TO_CHECK[-1])
             for day in free_beds:
@@ -251,17 +285,9 @@ def main():
                     available_per_day[iso_date].append(hut_id)
         except Exception:
             continue
-        
+    
         # Wenn die Hütte an mindestens einem der angegebenen Tage verfügbar ist, füge sie zu hut_infos hinzu
         if available_at_all:
-            coords_str = get_hut_details(hut["hutId"], return_category="coordinates") # Struktur: "46.5555, 8.1522" oder auch '46.953985/12.781181'
-            if coords_str:
-                coords_str = coords_str.replace("/", ",")
-                lat_str, lon_str = coords_str.split(",")
-                coords = {"latitude": float(lat_str.strip()), "longitude": float(lon_str.strip())}
-            else:
-                coords = {"latitude": None, "longitude": None}
-
             hut_infos[hut_id] = {
                 "name": name,
                 "lat": coords.get("latitude"),
@@ -276,17 +302,18 @@ def main():
             writer.writerow([hut_id, info["name"], info["lat"], info["lon"]])
 
     print(f"Versuche aus den {len(hut_infos)} verfügbaren Hütten Gruppen zu bilden...")
-    all_groups = find_groups(hut_infos, available_per_day)
+    all_groups = find_groups(hut_infos, available_per_day, False, False)
     print(f"Gefundene Gruppen: {all_groups}")
     
-    with open("huettengruppen.csv", "w", newline="", encoding="utf-8") as f:
+    with open("huettengruppen_at.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        header = [f"Tag{i+1}_id" for i in range(len(DATE_TO_CHECK))] + [f"Tag{i+1}_name" for i in range(len(DATE_TO_CHECK))]
+        header = [f"Tag{i+1}_id" for i in range(len(DATE_TO_CHECK)-1)] + [f"Tag{i+1}_name" for i in range(len(DATE_TO_CHECK)-1)] + [f"Coordinates_Tag{i+1}" for i in range(len(DATE_TO_CHECK)-1)]
         writer.writerow(header)
         for group in all_groups:
             ids = group
             names = [hut_infos[hid]["name"] for hid in group]
-            writer.writerow(ids + names)
+            coords = [f"{hut_infos[hid]['lat']}, {hut_infos[hid]['lon']}" for hid in group]
+            writer.writerow(ids + names + coords)
 
     print(f"{len(all_groups)} Hütten mit freien Betten am {DATE_TO_CHECK} gefunden.")
 
