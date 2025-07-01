@@ -23,7 +23,9 @@ COUNTRY = "AT"  # Land, für das die Hütten aufgelistet werden sollen, z.B. "AT
 
 ALLOW_DOUBLE_HUT = False  # Wenn True, kann eine Hütte mehrmals in einer Gruppe sein, sonst nur einmal
 ALLOW_STATIONARY_HUTS = False  # Wenn True, werden auch Gruppen gebildet mit nur einer Hütte, die an allen Tagen verfügbar ist
-MAX_DISTANCE = 10  # Maximale Distanz in km, um benachbarte Hütten zu finden (Luftlinie)
+MAX_DISTANCE = 8  # Maximale Distanz in km, um benachbarte Hütten zu finden (Luftlinie)
+
+OUTPUT_FILE = "huettengruppen.csv"  # Dateiname für die Ausgabe der Gruppen
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371  # Erdradius in km
@@ -315,18 +317,11 @@ def main():
                 "lon": coords.get("longitude")
             }
 
-    #Save hut_infos to file for debugging
-    with open("hut_infos.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["id", "name", "latitude", "longitude"])
-        for hut_id, info in hut_infos.items():
-            writer.writerow([hut_id, info["name"], info["lat"], info["lon"]])
-
     print(f"Versuche aus den {len(hut_infos)} verfügbaren Hütten Gruppen zu bilden...")
     all_groups = find_groups(hut_infos, available_per_day, allow_double_hut=ALLOW_DOUBLE_HUT, allow_stationary_huts=ALLOW_STATIONARY_HUTS)
     print(f"Gefundene Gruppen: {all_groups}")
     
-    with open("huettengruppen_at.csv", "w", newline="", encoding="utf-8") as f:
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         # Interleave lat/lon headers
         coords_headers = []

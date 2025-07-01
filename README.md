@@ -58,6 +58,7 @@ COUNTRY = "AT"  # Land: "AT" (Österreich), "CH" (Schweiz), "DE" (Deutschland)
 ALLOW_DOUBLE_HUT = False  # True: Hütte kann mehrfach in einer Gruppe sein
 ALLOW_STATIONARY_HUTS = False  # True: Gruppen mit nur einer Hütte möglich
 MAX_DISTANCE = 10  # Maximale Luftliniendistanz (km) zwischen Hütten
+OUTPUT_FILE = "huettengruppen.csv"  # Dateiname für die Ausgabe der Gruppen
 ```
 
 **Hinweise:**
@@ -75,7 +76,7 @@ Starte das Skript im Terminal:
 python find_neighboured_free_huts.py
 ```
 
-Die Ergebnisse werden als CSV-Dateien gespeichert (`hut_infos.csv`, `huettengruppen_at.csv`). Sie erhalten die Hütten-IDs, Namen und Koordinaten für jeden Tag.
+Die Ergebnisse werden als CSV-Dateien gespeichert (`OUTPUT_FILE`). Sie erhalten die Hütten-IDs, Namen und Koordinaten für jeden Tag.
 
 ---
 
