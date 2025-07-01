@@ -3,7 +3,7 @@ import csv
 
 from datetime import datetime, timedelta
 
-from Credentials import COOKIES, HEADERS
+from HEADERS_COOKIES import COOKIES, HEADERS
 
 BASE_URL = "https://www.hut-reservation.org/api/v1"
 DATE_TO_CHECK = "2025-07-11"  # <-- Hier dein Wunschdatum eintragen

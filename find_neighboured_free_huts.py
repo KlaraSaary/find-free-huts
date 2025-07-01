@@ -4,7 +4,7 @@ import math
 
 from datetime import datetime, timedelta
 
-from Credentials import COOKIES, HEADERS
+from HEADERS_COOKIES import COOKIES, HEADERS
 
 BASE_URL = "https://www.hut-reservation.org/api/v1"
 DATE_TO_CHECK = ["2025-07-09","2025-07-08"] # <-- Hier dein Wunschdatum eintragen
@@ -130,7 +130,7 @@ def find_groups(hut_infos, available_per_day):
         return all_groups
     
     #Prüfe welche der Start-Hütten auch an den anderen Tagen verfügbar sind, um eine Wanderung nur mit Tagesrouten zu ermöglichen
-    stationary_huts = start_huts
+    stationary_huts = start_huts.copy()  # Kopie der Start-Hütten, um sie zu filtern
     for date in available_per_day:
         # Filtere alle Hütten aus start_huts, die an diesem Tag verfügbar sind
         available_today = set(available_per_day[date])
@@ -230,23 +230,11 @@ def main():
     
     print(f"Iteriere über alle {len(huts)} Hütten und prüfe Verfügbarkeit an den Daten {DATE_TO_CHECK} für {NUMBER_OF_PEOPLE} Personen...")
     for hut in huts:
+        available_at_all = False
         hut_id = hut["hutId"]
         name = hut.get("hutName", "")
-        coords_str = get_hut_details(hut["hutId"], return_category="coordinates") # Struktur: "46.5555, 8.1522" oder auch '46.953985/12.781181'
-        if coords_str:
-            coords_str = coords_str.replace("/", ",")
-            lat_str, lon_str = coords_str.split(",")
-            coords = {"latitude": float(lat_str.strip()), "longitude": float(lon_str.strip())}
-        else:
-            coords = {"latitude": None, "longitude": None}
-        hut_infos[hut_id] = {
-            "name": name,
-            "lat": coords.get("latitude"),
-            "lon": coords.get("longitude")
-        }
         try:
             free_beds = check_availability(hut_id, DATE_TO_CHECK[0], DATE_TO_CHECK[-1])
-            available_at_all = False
             for day in free_beds:
                 date = day.get("CheckedDate")
                 iso_date = datetime.strptime(date, "%d.%m.%Y").strftime("%Y-%m-%d")
@@ -260,14 +248,33 @@ def main():
                         "free_beds": day.get("FreeBeds", 0)
                     }
                     available_huts.append(available)
-                    available_per_day[date].append(hut_id)
-            if not available_at_all:
-                # Lösche Hut aus hut_infos, wenn sie an keinem Tag verfügbar ist
-                del hut_infos[hut_id]
+                    available_per_day[iso_date].append(hut_id)
         except Exception:
             continue
+        
+        # Wenn die Hütte an mindestens einem der angegebenen Tage verfügbar ist, füge sie zu hut_infos hinzu
+        if available_at_all:
+            coords_str = get_hut_details(hut["hutId"], return_category="coordinates") # Struktur: "46.5555, 8.1522" oder auch '46.953985/12.781181'
+            if coords_str:
+                coords_str = coords_str.replace("/", ",")
+                lat_str, lon_str = coords_str.split(",")
+                coords = {"latitude": float(lat_str.strip()), "longitude": float(lon_str.strip())}
+            else:
+                coords = {"latitude": None, "longitude": None}
 
-    
+            hut_infos[hut_id] = {
+                "name": name,
+                "lat": coords.get("latitude"),
+                "lon": coords.get("longitude")
+            }
+
+    #Save hut_infos to file for debugging
+    with open("hut_infos.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "name", "latitude", "longitude"])
+        for hut_id, info in hut_infos.items():
+            writer.writerow([hut_id, info["name"], info["lat"], info["lon"]])
+
     print(f"Versuche aus den {len(hut_infos)} verfügbaren Hütten Gruppen zu bilden...")
     all_groups = find_groups(hut_infos, available_per_day)
     print(f"Gefundene Gruppen: {all_groups}")
