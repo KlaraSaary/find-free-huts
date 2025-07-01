@@ -3,16 +3,11 @@ import csv
 
 from datetime import datetime, timedelta
 
+from Credentials import COOKIES, HEADERS
+
 BASE_URL = "https://www.hut-reservation.org/api/v1"
 DATE_TO_CHECK = "2025-07-11"  # <-- Hier dein Wunschdatum eintragen
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "X-XSRF-TOKEN": ""
-}
-COOKIES = {
-    "SESSION": "", # <-- Hier dein Session-Cookie eintragen nach dem Login
-    "XSRF-TOKEN": "" # <-- Hier dein XSRF-Cookie eintragen nach dem Login
-}
+
 NUMBER_OF_PEOPLE = 0  # Anzahl der Personen für die Reservierung, 0 für gibt an, dass es egal ist
 
 def get_huts():
