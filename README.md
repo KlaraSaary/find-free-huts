@@ -1,37 +1,108 @@
 # find-free-huts
-Finde freie DAV/SAC/ÖAV Hütten an einem oder mehrern Daten.
 
-Logge dich bei https://www.hut-reservation.org ein. öfnne über den Rechtsklick und dann Inspect(Q)/Untersuchen(Q) die Entwickleroptionen. Wähle im oberen Menü "Storage"/"Speicher" aus und navigiere zu den Cookies. Dort findest du einen Wert für SESSION und XSRF-TOKEN. Diese beiden Werte kopierst du an die entsprechende Stelle in HEADERS_COOKIES.py.
+**find-free-huts** hilft dir, freie DAV/SAC/ÖAV Hütten für eine oder mehrere Nächte zu finden und passende Hüttengruppen für deine Tour zu bilden. Das Skript `find_neighboured_free_huts.py` ist fertig, während das Skript `find_available-hut.py` mehr ein "Proof of Concept" ist.
 
-Zu Beginn der Datei find_neighboured_free_huts.py findest du weitere Variablen, die du setzen kannst, aber nicht musst. 
+---
+
+## Features
+
+- Suche nach freien Hütten an mehreren Tagen
+- Filter nach Land und geografischen Grenzen
+- Gruppierung benachbarter Hütten für Mehrtagestouren
+- CSV-Export der Ergebnisse
+
+---
+
+## Voraussetzungen
+
+- Python 3.7 oder neuer
+- Benötigte Python-Bibliotheken:
+  - `requests`
+  - `csv`
+  - `math`
+  - `time`
+  - `datetime`
+Installiere fehlende Bibliotheken mit:
+```bash
+pip install requests
+```
+
+---
+
+## Vorbereitung
+
+1. **Login:**  
+   Melde dich auf [hut-reservation.org](https://www.hut-reservation.org) an.
+
+2. **Cookies kopieren:**  
+   - Öffne die Entwicklerwerkzeuge deines Browsers (Rechtsklick → Untersuchen/Inspect).
+   - Gehe zum Tab „Storage“/„Speicher“ und suche die Cookies `SESSION` und `XSRF-TOKEN`.
+   - Trage diese Werte in die Datei `HEADERS_COOKIES.py` ein.
+
+---
+
+## Konfiguration
+
+Passe zu Beginn von `find_neighboured_free_huts.py` folgende Variablen an:
 
 ```python
-DATE_TO_CHECK = ["2025-07-09","2025-07-10", "2025-07-11","2025-07-12"] # <-- Hier dein Wunschdatum eintragen
-
-NUMBER_OF_PEOPLE = 5  # Anzahl der Personen für die Reservierung, 0 für gibt an, dass es egal ist
-
+DATE_TO_CHECK = ["2025-07-09", "2025-07-10", "2025-07-11", "2025-07-12"]  # Deine Wunschdaten (letztes Datum = Abreisetag)
+NUMBER_OF_PEOPLE = 5  # Mindestanzahl freier Plätze (0 = egal)
 BORDERS = {
-    "west": 9.635,  # Längengrad Westgrenze
-    "east": 12.401,  # Längengrad Ostgrenze
-    "north": 47.769,  # Breitengrad Nordgrenze
-    "south": 46.851   # Breitengrad Südgrenze
-}
+    "west": 9.635,
+    "east": 12.401,
+    "north": 47.769,
+    "south": 46.851
+}  # Optional: Geografische Grenzen (Längengrad/Breitengrad)
+COUNTRY = "AT"  # Land: "AT" (Österreich), "CH" (Schweiz), "DE" (Deutschland)
+ALLOW_DOUBLE_HUT = False  # True: Hütte kann mehrfach in einer Gruppe sein
+ALLOW_STATIONARY_HUTS = False  # True: Gruppen mit nur einer Hütte möglich
+MAX_DISTANCE = 10  # Maximale Luftliniendistanz (km) zwischen Hütten
+```
 
-COUNTRY = "AT"  # Land, für das die Hütten aufgelistet werden sollen, z.B. "AT" für Österreich, "CH" für Schweiz, "DE" für Deutschland
+**Hinweise:**
+- Die Liste `DATE_TO_CHECK` muss nicht sortiert oder vollständig sein. Fehlende Tage werden automatisch ergänzt (`sort_and_fill_Datelist()`).
+- Mit `BORDERS` und `COUNTRY` kannst du die Suche geografisch einschränken.
+- `NUMBER_OF_PEOPLE` stellt sicher, dass nur Hütten berücksichtigt werden mit einer Mindestanzahl von freien Plätzen. Diese können sich jedoch in unterschiedlichen Zimmerkategorien befinden. 
+- Setze `ALLOW_STATIONARY_HUTS` auf `True`, wenn du auch angezeigt haben möchtest, welche Hütte die gesamte Zeit verfügbar ist.
+---
 
-ALLOW_DOUBLE_HUT = False  # Wenn True, kann eine Hütte mehrmals in einer Gruppe sein, sonst nur einmal
-ALLOW_STATIONARY_HUTS = False  # Wenn True, werden auch Gruppen gebildet mit nur einer Hütte, die an allen Tagen verfügbar ist
-MAX_DISTANCE = 10  # Maximale Distanz in km, um benachbarte Hütten zu finden (Luftlinie)
-``` 
+## Nutzung
 
-In <code>DATE_TO_CHECK</code> gibst du die Tage an, für die du deine Tour planst. Dabei ist das letzte Datum dein Abreisetag und das erste Datum dein Anreisetag. Die Daten müssen nicht sortiert sein und auch nicht vollständig. Alle Daten zwischen dem frühsten und spätesten Datum werden aufgefüllt (sort_and_fill_Datelist()).
+Starte das Skript im Terminal:
 
-<code>NUMBER_OF_PEOPLE</code> stellt sicher, dass nur Hütten berücksichtigt werden mit einer Mindestanzahl von freien Plätzen. Diese können sich jedoch in unterschiedlichen Zimmerkategorien befinden. Dies könnte in <code>check_availability(hut_id, arrival, departure=None)</code> ergänzt werden, da der Wert <code>availabilityPerDayDTOs[idx]["bedCategoriesData"][idx_1]["totalFreePlaces"]</code> ebenfalls in der Serverantwort verfügbar ist.
+```bash
+python find_neighboured_free_huts.py
+```
 
-Als weiter Optionen kann via <code>COUNTRY</code> nach einen Land gefilter werden oder/und via <code>BORDERS</code> nach einem Gebiet.
+Die Ergebnisse werden als CSV-Dateien gespeichert (`hut_infos.csv`, `huettengruppen_at.csv`). Sie erhalten die Hütten-IDs, Namen und Koordinaten für jeden Tag.
 
-Die Optionen <code>ALLOW_DOUBLE_HUT</code> und <code>ALLOW_STATIONARY_HUTS</code> sind Paramter für die Bildung der Hüttengruppen und können auf <code>True</code> gestellt werden, wenn sonst keine Ergebnisse verfügbar sind oder eine Hütte gesucht wird, die an allen Tagen verfügbar ist für einen stationären Aufenthalt
+---
 
-Gerne kann das Skript um weiter Optionen erweitert werden. Ebenso fehlt noch eine GUI sowohl für die Suche als auch die Darstellung der Ergebnisse. Diese werden aktuell in einer csv-Datei gespeichert.
+## Erweiterungen & Hinweise
 
-Statt einer Luftliniendistanz (<code>MAX_DISTANCE = 10</code>) könnte auch unter Einbindung weiterer Libraries eine reelle Wegdistanz verwendet werden.
+- Die Optionen `ALLOW_DOUBLE_HUT` und `ALLOW_STATIONARY_HUTS` beeinflussen die Gruppensuche (z.B. für stationäre Aufenthalte).
+- Um nur Hütten anzuzeigen, die genug freie Plätze einer Zimmerkategorie haben, könnte `check_availability(hut_id, arrival, departure=None)` angepasst werden. Hier ist der Wert `availabilityPerDayDTOs[idx]["bedCategoriesData"][idx_1]["totalFreePlaces"]` ebenfalls in der Serverantwort verfügbar.
+- Das Skript kann um weitere Filter und Optionen erweitert werden.
+- Eine grafische Oberfläche (GUI) ist nicht enthalten, weder für die Suche noch für die Darstellung der Ergebnisse.
+- Statt einer Luftliniendistanz (`MAX_DISTANCE`) kann mit zusätzlichen Libraries auch eine reale Wegdistanz berechnet werden.
+
+---
+
+## Beispiel
+
+```python
+DATE_TO_CHECK = ["2025-07-09", "2025-07-10", "2025-07-11"]
+NUMBER_OF_PEOPLE = 4
+COUNTRY = "DE"
+MAX_DISTANCE = 8
+```
+Sucht nach freien Hütten in Deutschland für 4 Personen an den angegebenen Tagen, wobei benachbarte Hütten maximal 8 km auseinanderliegen dürfen.
+
+---
+
+## Lizenz
+
+Dieses Projekt steht unter der MIT-Lizenz.
+
+
