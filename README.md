@@ -104,6 +104,6 @@ Sucht nach freien Hütten in Deutschland für 4 Personen an den angegebenen Tage
 
 ## Lizenz
 
-Dieses Projekt steht unter der MIT-Lizenz.
+Dieses Projekt steht unter der AGPLv3 Lizenz.
 
 
